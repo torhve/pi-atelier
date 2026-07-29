@@ -1,7 +1,7 @@
 import {
-	getSettingsListTheme,
 	type ExtensionAPI,
 	type ExtensionContext,
+	getSettingsListTheme,
 } from "@earendil-works/pi-coding-agent";
 import {
 	Container,
@@ -17,7 +17,7 @@ import { saveUserConfig, saveUserConfigPatch } from "./config.js";
 import { createSettingsWorkspace } from "./settings-workspace.js";
 import { applyDisplayTemplate, reorderSegment, toggleSegmentVisibility } from "./display.js";
 import type { AtelierRuntime } from "./state.js";
-import type { AtelierConfig, Ornament, SegmentId, TemplateName } from "./types.js";
+import { type AtelierConfig, DEFAULT_CONFIG, type Ornament, type PresetName, type SegmentId, type TemplateName } from "./types.js";
 
 export type SaveConfig = typeof saveUserConfig;
 export type SaveConfigPatch = typeof saveUserConfigPatch;

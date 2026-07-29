@@ -25,7 +25,7 @@ import {
 	type SidebarSnapshot,
 } from "../src/sidebar.js";
 import { AtelierRuntime } from "../src/state.js";
-import type { AtelierState, FooterState, NormalizedTodo, RpivTask, TodoItem } from "../src/types.js";
+import type { AtelierState, CurrentGoal, FooterState, NormalizedTodo, RpivTask, TodoItem } from "../src/types.js";
 
 export interface AtelierExtensionDependencies {
 	saveConfig?: typeof saveUserConfig;
@@ -48,6 +48,7 @@ export default function atelierExtension(
 	let runActivity: RunActivityTracker | undefined;
 	let completionNotifier: CompletionNotifier | undefined;
 	let unsubscribeAskUserBlocked: (() => void) | undefined;
+	let unsubscribeGoalState: (() => void) | undefined;
 	let askUserBlocked = false;
 	let inputRequestSequence = 0;
 	let extensionStatuses: readonly string[] = [];
@@ -80,14 +81,24 @@ export default function atelierExtension(
 
 
 
-	interface OldTodoDetails { todos: TodoItem[]; nextId: number; }
-	interface NewTaskDetails { tasks: RpivTask[]; nextId: number; }
+	interface OldTodoDetails {
+		todos: TodoItem[];
+		nextId: number;
+	}
+	interface NewTaskDetails {
+		tasks: RpivTask[];
+		nextId: number;
+	}
 
 	function normalizeTodo(item: TodoItem | RpivTask): NormalizedTodo {
-		if ('done' in item) {
-			return { id: item.id, text: item.text, status: item.done ? 'completed' : 'pending' };
+		if ("done" in item) {
+			return { id: item.id, text: item.text, status: item.done ? "completed" : "pending" };
 		}
-		return { id: item.id, text: item.subject, status: item.status as 'pending' | 'in_progress' | 'completed' };
+		return {
+			id: item.id,
+			text: item.subject,
+			status: item.status as "pending" | "in_progress" | "completed",
+		};
 	}
 
 	function reconstructTodos(ctx: ExtensionContext): NormalizedTodo[] {
@@ -97,11 +108,35 @@ export default function atelierExtension(
 			const msg = entry.message;
 			if (msg.role !== "toolResult" || msg.toolName !== "todo") continue;
 			const details = msg.details as OldTodoDetails | NewTaskDetails | undefined;
-			if (details && 'todos' in details) allItems = details.todos;
-			if (details && 'tasks' in details) allItems = details.tasks;
+			if (details && "todos" in details) allItems = details.todos;
+			if (details && "tasks" in details) allItems = details.tasks;
 		}
 		return allItems.map(normalizeTodo);
 	}
+
+	const GOAL_STATE_ENTRY_TYPE = "goal-state";
+
+	interface GoalStateEntryData {
+		goal: { id?: string; text?: string; status?: string } | null;
+	}
+
+	function reconstructCurrentGoal(ctx: ExtensionContext): CurrentGoal | undefined {
+		const entries = ctx.sessionManager.getBranch();
+		const goalEntries = entries.filter(
+			(entry) => entry.type === "custom" && entry.customType === GOAL_STATE_ENTRY_TYPE,
+		);
+		const lastEntry = goalEntries.pop();
+		if (!lastEntry) return undefined;
+		if (lastEntry.type !== "custom") return undefined;
+		const data = lastEntry.data as GoalStateEntryData | undefined;
+		if (!data?.goal && data?.goal !== null) return undefined;
+		if (data.goal === null) return undefined;
+		const g = data.goal;
+		if (!g.id || !g.text || !g.status) return undefined;
+		if (g.status === "complete") return undefined;
+		return { goalId: g.id, text: g.text, status: g.status };
+	}
+
 	function getSidebarSnapshot(
 		ctx: ExtensionContext,
 		targetRuntime: AtelierRuntime,
@@ -331,7 +366,10 @@ export default function atelierExtension(
 						return;
 					}
 					const next = agentAction === undefined ? undefined : agentAction === "on";
-					runtime.setConfig({ ...runtime.getConfig(), showSidebarAgent: next ?? !runtime.getConfig().showSidebarAgent });
+					runtime.setConfig({
+						...runtime.getConfig(),
+						showSidebarAgent: next ?? !runtime.getConfig().showSidebarAgent,
+					});
 					sidebar.requestRender();
 					return;
 				}
@@ -450,6 +488,7 @@ export default function atelierExtension(
 			const previousRunActivity = runActivity;
 			const previousCompletionNotifier = completionNotifier;
 			const previousUnsubscribeAskUserBlocked = unsubscribeAskUserBlocked;
+			const previousUnsubscribeGoalState = unsubscribeGoalState;
 			runtime = candidateRuntime;
 			sidebar = localSidebar;
 			runActivity = localRunActivity;
@@ -474,12 +513,34 @@ export default function atelierExtension(
 					completionNotification(initializationContext, "input-requested", localRunActivity.getSnapshot()),
 				);
 			});
+			// Subscribe to pi-goal state events for sidebar goal panel
+			unsubscribeGoalState = pi.events.on("pi-goal:state", (data) => {
+				if (runtime !== candidateRuntime) return;
+				if (typeof data !== "object" || data === null) return;
+				const payload = data as { goalId?: unknown; status?: unknown };
+				const goalId = typeof payload.goalId === "string" ? payload.goalId : undefined;
+				const status = typeof payload.status === "string" ? payload.status : undefined;
+				if (!goalId || !status) return;
+				if (status === "cleared") {
+					candidateRuntime.setCurrentGoal(undefined);
+					return;
+				}
+				// Reconstruct full goal info from session entries on event
+				if (!currentContext) return;
+				const currentGoal = reconstructCurrentGoal(currentContext);
+				candidateRuntime.setCurrentGoal(currentGoal);
+			});
+			// Set initial goal state from session entries
+			const initialGoal = reconstructCurrentGoal(currentContext);
+			candidateRuntime.setCurrentGoal(initialGoal);
+
 			extensionStatuses = [];
 			previousSidebar?.dispose();
 			previousRuntime?.dispose();
 			previousRunActivity?.reset();
 			previousCompletionNotifier?.reset();
 			previousUnsubscribeAskUserBlocked?.();
+			previousUnsubscribeGoalState?.();
 
 			if (isFresh() && !shortcutRegistered) {
 				try {
@@ -537,6 +598,9 @@ export default function atelierExtension(
 			const unsubscribe = unsubscribeAskUserBlocked;
 			unsubscribeAskUserBlocked = undefined;
 			unsubscribe?.();
+			const unsubscribeGoal = unsubscribeGoalState;
+			unsubscribeGoalState = undefined;
+			unsubscribeGoal?.();
 			askUserBlocked = false;
 			currentContext = undefined;
 			currentSessionManager = undefined;
@@ -596,9 +660,9 @@ export default function atelierExtension(
 
 		const details = event.details as OldTodoDetails | NewTaskDetails | undefined;
 		let todoList: NormalizedTodo[] = [];
-		if (details && 'todos' in details) todoList = details.todos.map(normalizeTodo);
-		if (details && 'tasks' in details) todoList = details.tasks.map(normalizeTodo);
-		const done = todoList.filter((t) => t.status === 'completed').length;
+		if (details && "todos" in details) todoList = details.todos.map(normalizeTodo);
+		if (details && "tasks" in details) todoList = details.tasks.map(normalizeTodo);
+		const done = todoList.filter((t) => t.status === "completed").length;
 		sidebar?.requestRender();
 		return {
 			content: [{ type: "text", text: `${done}/${todoList.length} done · see sidebar` }],
@@ -641,6 +705,9 @@ export default function atelierExtension(
 		const unsubscribe = unsubscribeAskUserBlocked;
 		unsubscribeAskUserBlocked = undefined;
 		unsubscribe?.();
+		const unsubscribeGoal = unsubscribeGoalState;
+		unsubscribeGoalState = undefined;
+		unsubscribeGoal?.();
 		askUserBlocked = false;
 		current?.ctx.ui.setFooter(undefined);
 		currentContext = undefined;

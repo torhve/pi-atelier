@@ -481,7 +481,9 @@ function toolsStatusRows(
 		),
 	];
 	if (finiteCount(snapshot.skillsCount) > 0) {
-		rows.push(spacedRow(palette.paint("primary", `${finiteCount(snapshot.skillsCount)} skills`), "", contentWidth));
+		rows.push(
+			spacedRow(palette.paint("primary", `${finiteCount(snapshot.skillsCount)} skills`), "", contentWidth),
+		);
 	}
 	return rows;
 }
@@ -518,22 +520,52 @@ function todosRows(snapshot: SidebarSnapshot, palette: AtelierPalette): string[]
 	const todoList = snapshot.todos;
 	if (todoList.length === 0) return [];
 
-	const done = todoList.filter((t) => t.status === 'completed').length;
+	const done = todoList.filter((t) => t.status === "completed").length;
 	const total = todoList.length;
 	const rows = [palette.paint("muted", `${done}/${total}`)];
 
 	for (const todo of todoList) {
 		let check: string;
-		if (todo.status === 'completed') check = palette.paint("ready", "✓");
-		else if (todo.status === 'in_progress') check = palette.paint("warning", "◐");
+		if (todo.status === "completed") check = palette.paint("ready", "✓");
+		else if (todo.status === "in_progress") check = palette.paint("warning", "◐");
 		else check = palette.paint("dim", "○");
 		const id = palette.paint("accent", `#${todo.id}`);
-		const text = todo.status === 'completed'
-			? palette.paint("dim", sanitize(todo.text))
-			: palette.paint("primary", sanitize(todo.text));
+		const text =
+			todo.status === "completed"
+				? palette.paint("dim", sanitize(todo.text))
+				: palette.paint("primary", sanitize(todo.text));
 		rows.push(`${check} ${id} ${text}`);
 	}
 	return rows;
+}
+
+function goalStatusSymbol(status: string): { symbol: string; role: PaletteRole } {
+	switch (status) {
+		case "active":
+			return { symbol: "▶", role: "working" };
+		case "queued":
+			return { symbol: "⏱", role: "muted" };
+		case "paused":
+			return { symbol: "⏸", role: "warning" };
+		case "blocked":
+			return { symbol: "✕", role: "error" };
+		case "usage_limited":
+			return { symbol: "▲", role: "warning" };
+		case "budget_limited":
+			return { symbol: "▲", role: "warning" };
+		default:
+			return { symbol: "●", role: "dim" };
+	}
+}
+
+function goalRows(snapshot: SidebarSnapshot, palette: AtelierPalette): string[] {
+	const goal = snapshot.currentGoal;
+	if (!goal) return [];
+
+	const { symbol, role } = goalStatusSymbol(goal.status);
+	const statusLabel = palette.paint(role, `${symbol} ${sanitize(goal.status).toUpperCase()}`);
+	const text = palette.paint("primary", sanitize(goal.text));
+	return [statusLabel, text];
 }
 
 const exceptionStatusPattern =
@@ -810,14 +842,16 @@ export function renderSidebarLines(
 						dropRank: Number.POSITIVE_INFINITY,
 					},
 				]
-		: []),
+			: []),
 		...(config.showSidebarAgent
 			? [
 					{
 						name: "agent",
 						panel: "AGENT",
 						panelRole: activityRole(snapshot.activity),
-						panelJewel: (snapshot.activity === "working" && Math.floor(now / 400) % 2 === 1 ? "✧" : "✦") as "✦" | "✧",
+						panelJewel: (snapshot.activity === "working" && Math.floor(now / 400) % 2 === 1 ? "✧" : "✦") as
+							| "✦"
+							| "✧",
 						rows: agentRows(snapshot, layout, panelContentWidth, palette, theme),
 						required: true,
 						dropRank: Number.POSITIVE_INFINITY,
@@ -844,6 +878,18 @@ export function renderSidebarLines(
 			rows: config.showSidebarTodos ? todosRows(snapshot, palette) : [],
 			required: false,
 			dropRank: 90,
+		},
+		{
+			name: "goal",
+			panel: "GOAL",
+			panelRole: snapshot.currentGoal
+				? snapshot.currentGoal.status === "active"
+					? "working"
+					: "accent"
+				: "accent",
+			rows: goalRows(snapshot, palette),
+			required: false,
+			dropRank: 85,
 		},
 		{
 			name: "context",

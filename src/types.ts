@@ -17,9 +17,21 @@ export type Density = "comfortable" | "compact";
 /** Legacy menu vocabulary. Ornament is translated to Brand visibility. */
 export type Ornament = "none" | "restrained";
 export type ConfigurationSource = "product" | "user" | "project" | "session";
-export interface TodoItem { id: number; text: string; done: boolean; }
-export interface RpivTask { id: number; subject: string; status: string; }
-export interface NormalizedTodo { id: number; text: string; status: 'pending' | 'in_progress' | 'completed'; }
+export interface TodoItem {
+	id: number;
+	text: string;
+	done: boolean;
+}
+export interface RpivTask {
+	id: number;
+	subject: string;
+	status: string;
+}
+export interface NormalizedTodo {
+	id: number;
+	text: string;
+	status: "pending" | "in_progress" | "completed";
+}
 
 export interface SegmentLayoutEntry {
 	id: SegmentId;
@@ -103,6 +115,12 @@ export type WorkspacePulseState =
 	| { status: "clean" | "changed" | "conflict" | "stale"; data: WorkspacePulseData }
 	| { status: "not-repo" | "unavailable" };
 
+export interface CurrentGoal {
+	goalId: string;
+	text: string;
+	status: string;
+}
+
 export interface AtelierState {
 	activity: ActivityState;
 	workingLabel?: string;
@@ -114,6 +132,7 @@ export interface AtelierState {
 	workspacePulse: WorkspacePulseState;
 	metrics: AtelierMetrics;
 	extensionStatuses: readonly string[];
+	currentGoal?: CurrentGoal;
 }
 
 /** Footer render input: runtime state plus the live response metrics the runtime does not own. */
