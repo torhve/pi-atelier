@@ -286,7 +286,6 @@ function applyNonDisplay(input: unknown, config: AtelierConfig, warnings: string
 		else warnings.push("currencyDecimals must be an integer from 0 through 6");
 	}
 	for (const key of [
-		"showExtensionStatuses",
 		"showSessionActions",
 		"showSidebarToolNames",
 		"showSidebarAgent",
